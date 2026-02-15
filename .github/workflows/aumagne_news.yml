@@ -1,0 +1,51 @@
+name: Aumagne News Digest
+
+on:
+  schedule:
+    # Tous les jours a 10h30 UTC = 12h30 Paris (ete) / 11h30 Paris (hiver)
+    - cron: '30 10 * * *'
+    # Test biweekly : le 1er et le 15 de chaque mois a 8h UTC
+    - cron: '0 8 1,15 * *'
+  workflow_dispatch:
+    inputs:
+      test:
+        description: 'Envoyer un digest de test'
+        type: boolean
+        default: false
+
+jobs:
+  news-digest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore digest state
+        uses: actions/cache@v4
+        with:
+          path: last_digest.json
+          key: aumagne-digest-state-${{ github.run_id }}
+          restore-keys: |
+            aumagne-digest-state-
+
+      - name: Run news digest
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          HOUR=$(date -u +%H)
+          DAY=$(date -u +%d)
+          if [[ "${{ inputs.test }}" == "true" || ("$HOUR" == "08" && ("$DAY" == "01" || "$DAY" == "15")) ]]; then
+            python aumagne_news.py --test
+          else
+            python aumagne_news.py
+          fi
