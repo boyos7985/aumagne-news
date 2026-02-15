@@ -130,10 +130,11 @@ def fetch_francebleu():
     if resp is None:
         return articles
     soup = BeautifulSoup(resp.text, "html.parser")
-    for link in soup.select("a[href]"):
+    # Target actual article links (in headlines/cards), require /infos/ in URL
+    for link in soup.select("article a[href], h2 a[href], h3 a[href], .card a[href]"):
         title = link.get_text(strip=True)
         href = link.get("href", "")
-        if title and len(title) > 20 and "/infos/" in href:
+        if title and len(title) > 30 and "/infos/" in href:
             full_url = href if href.startswith("http") else f"https://www.francebleu.fr{href}"
             articles.append({
                 "title": title,
@@ -145,17 +146,18 @@ def fetch_francebleu():
 
 
 def fetch_mairie():
-    """Scrape news from Aumagne mairie website."""
+    """Scrape actual news/articles from Aumagne mairie website."""
     articles = []
     url = "https://www.aumagne.fr/"
     resp = safe_fetch(url)
     if resp is None:
         return articles
     soup = BeautifulSoup(resp.text, "html.parser")
-    for link in soup.select("a[href]"):
-        title = link.get_text(strip=True)
-        href = link.get("href", "")
-        if title and len(title) > 15 and href and href != "/":
+    # Target article/news containers, not navigation links
+    for el in soup.select("article a[href], .actualite a[href], .news a[href], .post a[href], .entry a[href]"):
+        title = el.get_text(strip=True)
+        href = el.get("href", "")
+        if title and len(title) > 30 and href:
             full_url = href if href.startswith("http") else f"https://www.aumagne.fr{href}"
             articles.append({
                 "title": title,
@@ -167,7 +169,7 @@ def fetch_mairie():
 
 
 def fetch_vals_de_saintonge():
-    """Scrape events/news from Vals de Saintonge website."""
+    """Scrape actual news/events from Vals de Saintonge website."""
     articles = []
     urls = [
         "https://www.valsdesaintonge.fr/actualites/",
@@ -178,10 +180,11 @@ def fetch_vals_de_saintonge():
         if resp is None:
             continue
         soup = BeautifulSoup(resp.text, "html.parser")
-        for link in soup.select("a[href]"):
-            title = link.get_text(strip=True)
-            href = link.get("href", "")
-            if title and len(title) > 15 and href and href != "/":
+        # Target article/event containers, not navigation
+        for el in soup.select("article a[href], .actualite a[href], .event a[href], .post a[href], .entry a[href], .card a[href]"):
+            title = el.get_text(strip=True)
+            href = el.get("href", "")
+            if title and len(title) > 30 and href:
                 full_url = href if href.startswith("http") else f"https://www.valsdesaintonge.fr{href}"
                 articles.append({
                     "title": title,
@@ -227,22 +230,23 @@ def is_recent(article, max_age_hours=48):
 
 
 def is_relevant(article):
-    """Article must mention a commune in the perimeter AND not mention excluded cities."""
-    text = (article["title"] + " " + article.get("url", "")).lower()
+    """Article must mention a commune in the TITLE AND not mention excluded cities."""
+    title = article["title"].lower()
     # Exclude articles about far-away cities
-    if any(city in text for city in EXCLUDED_CITIES):
+    if any(city in title for city in EXCLUDED_CITIES):
         return False
-    # Must mention a commune in the perimeter
-    mentions_commune = any(c in text for c in COMMUNES)
+    # Must mention a commune in the perimeter — in the title only, not URL
+    # (URLs like aumagne.fr would match everything from that domain)
+    mentions_commune = any(c in title for c in COMMUNES)
     return mentions_commune
 
 
 def classify_article(article):
     """Classify article: 'aumagne', 'alentours', or 'activites'."""
-    text = (article["title"] + " " + article.get("url", "")).lower()
-    if COMMUNE_AUMAGNE in text:
+    title = article["title"].lower()
+    if COMMUNE_AUMAGNE in title:
         return "aumagne"
-    if any(k in text for k in KEYWORDS):
+    if any(k in title for k in KEYWORDS):
         return "activites"
     return "alentours"
 
