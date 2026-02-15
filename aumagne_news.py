@@ -258,15 +258,21 @@ def is_recent(article, max_age_hours=48):
 
 
 def is_relevant(article):
-    """Article must mention a commune in the TITLE AND not mention excluded cities."""
+    """Filter articles by location and theme.
+    - Aumagne: all news accepted
+    - Other communes: must also match a keyword/theme of interest
+    """
     title = article["title"].lower()
     # Exclude articles about far-away cities
     if any(city in title for city in EXCLUDED_CITIES):
         return False
-    # Must mention a commune in the perimeter — in the title only, not URL
-    # (URLs like aumagne.fr would match everything from that domain)
+    # Aumagne: keep everything
+    if COMMUNE_AUMAGNE in title:
+        return True
+    # Other communes: must mention commune + keyword
     mentions_commune = any(c in title for c in COMMUNES)
-    return mentions_commune
+    matches_keyword = any(k in title for k in KEYWORDS)
+    return mentions_commune and matches_keyword
 
 
 def classify_article(article):
