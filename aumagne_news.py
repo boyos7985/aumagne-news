@@ -168,6 +168,34 @@ def fetch_mairie():
     return articles[:10]
 
 
+def fetch_actu_direct():
+    """Scrape local news from actu.direct (aggregates L'Angerien Libre, SudOuest, etc.)."""
+    articles = []
+    urls = [
+        "https://actu.direct/charente-maritime/saint-jean-d-angely",
+        "https://actu.direct/charente-maritime/matha",
+    ]
+    for url in urls:
+        resp = safe_fetch(url)
+        if resp is None:
+            continue
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for link in soup.select("a[href]"):
+            title = link.get_text(strip=True)
+            href = link.get("href", "")
+            # Only keep external article links (not internal navigation)
+            if (title and len(title) > 30
+                    and href.startswith("http")
+                    and "actu.direct" not in href):
+                articles.append({
+                    "title": title,
+                    "url": href,
+                    "source": "Actu Direct",
+                    "published": "",
+                })
+    return articles[:20]
+
+
 def fetch_vals_de_saintonge():
     """Scrape actual news/events from Vals de Saintonge website."""
     articles = []
@@ -333,6 +361,7 @@ def main():
         ("Google News", fetch_google_news),
         ("SudOuest", fetch_sudouest_rss),
         ("France Bleu", fetch_francebleu),
+        ("Actu Direct", fetch_actu_direct),
         ("Mairie Aumagne", fetch_mairie),
         ("Vals de Saintonge", fetch_vals_de_saintonge),
     ]
