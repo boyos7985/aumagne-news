@@ -2,6 +2,8 @@ import os
 import sys
 import json
 import datetime
+import time
+import email.utils
 import requests
 import feedparser
 from bs4 import BeautifulSoup
@@ -26,6 +28,14 @@ COMMUNES = [
     "fontenet", "mons", "nantille", "prignac", "varaize",
     "matha", "saint-jean-d'angely", "saint jean d'angely",
     "saint-jean-d-angely", "vals de saintonge",
+]
+
+# --- Villes hors perimetre (a exclure) ---
+EXCLUDED_CITIES = [
+    "poitiers", "la rochelle", "bordeaux", "niort", "angouleme",
+    "royan", "rochefort", "limoges", "pau", "biarritz", "bayonne",
+    "agen", "perigueux", "mont-de-marsan", "dax", "bergerac",
+    "chatellerault", "bressuire", "parthenay", "thouars",
 ]
 
 # --- Mots-cles d'interet ---
@@ -184,14 +194,47 @@ def fetch_vals_de_saintonge():
 
 # --- Filtering & deduplication ---
 
+def parse_pub_date(published_str):
+    """Parse RSS published date string, return datetime or None."""
+    if not published_str:
+        return None
+    try:
+        parsed = email.utils.parsedate_to_datetime(published_str)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+        return parsed
+    except Exception:
+        pass
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"):
+        try:
+            parsed = datetime.datetime.strptime(published_str, fmt)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+            return parsed
+        except ValueError:
+            continue
+    return None
+
+
+def is_recent(article, max_age_hours=48):
+    """Check if article was published within the last max_age_hours.
+    Articles without a date are kept (benefit of the doubt for scraped sources)."""
+    pub = parse_pub_date(article.get("published", ""))
+    if pub is None:
+        return True
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return (now - pub).total_seconds() < max_age_hours * 3600
+
+
 def is_relevant(article):
-    """Check if an article mentions a commune or a keyword of interest."""
+    """Article must mention a commune in the perimeter AND not mention excluded cities."""
     text = (article["title"] + " " + article.get("url", "")).lower()
+    # Exclude articles about far-away cities
+    if any(city in text for city in EXCLUDED_CITIES):
+        return False
     # Must mention a commune in the perimeter
     mentions_commune = any(c in text for c in COMMUNES)
-    # Or must match a keyword of interest
-    matches_keyword = any(k in text for k in KEYWORDS)
-    return mentions_commune or matches_keyword
+    return mentions_commune
 
 
 def classify_article(article):
@@ -301,8 +344,10 @@ def main():
 
     print(f"Total raw articles: {len(all_articles)}")
 
-    # 2. Filter relevant
-    relevant = [a for a in all_articles if is_relevant(a)]
+    # 2. Filter recent (last 48h) and relevant (commune in perimeter)
+    recent = [a for a in all_articles if is_recent(a)]
+    print(f"Recent articles (last 48h): {len(recent)}")
+    relevant = [a for a in recent if is_relevant(a)]
     print(f"Relevant articles: {len(relevant)}")
 
     # 3. Deduplicate
